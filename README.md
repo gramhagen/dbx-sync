@@ -28,7 +28,8 @@ Current scope notes:
 ## Prerequisites
 
 - Databricks CLI 0.205 or newer
-  - With a configured Databricks CLI profile
+  - [Install the Databricks CLI](https://docs.databricks.com/en/dev-tools/cli/install.html)
+  - [Configure a DEFAULT profile](https://docs.databricks.com/en/dev-tools/cli/configure.html)
 
 ## Install
 
