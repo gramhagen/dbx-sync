@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     # Environment and permissions trusted publishing.
     environment:
-      # Create this environment in the GitHub repository under Settings -> Environments
       name: test-pypi
     permissions:
       id-token: write
@@ -37,4 +36,4 @@ jobs:
         run: uv build
 
       - name: Publish
-        run: uv publish --repository-url https://test.pypi.org/legacy/
+        run: uv publish --index test-pypi dist/*
