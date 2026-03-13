@@ -53,8 +53,3 @@ quote-style = "double"
 
 [tool.uv]
 package = true
-
-[[tool.uv.index]]
-name = "test-pypi"
-url = "https://test.pypi.org/legacy/"
-publish-url = "https://test.pypi.org/legacy/"
