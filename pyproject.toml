@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dbx-sync"
+version = "0.1.0"
+description = "Synchronize Databricks workspace content with a local directory."
+authors = [{ name = "gramhagen" }]
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+dbx-sync = "dbx_sync.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.11.0",
+    "ty>=0.0.23",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dbx_sync"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers --strict-config"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["dbx_sync"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "SIM", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.uv]
+package = true
