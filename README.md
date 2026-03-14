@@ -28,7 +28,8 @@ Current scope notes:
 ## Prerequisites
 
 - Databricks CLI 0.205 or newer
-  - With a configured Databricks CLI profile
+  - [Install the Databricks CLI](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/install)
+  - [Configure a DEFAULT profile](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/authentication#oauth-user-to-machine-u2m-authentication)
 
 ## Install
 
