@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from unittest.mock import MagicMock
 
 import dbx_sync.cli as cli
 
@@ -96,3 +97,40 @@ def test_main_rejects_non_positive_poll_interval(monkeypatch: Any, tmp_path: Pat
         assert exc.code == 2
     else:
         raise AssertionError("expected argparse to reject a non-positive poll interval")
+
+
+def test_main_handles_invalid_refresh_token_error(monkeypatch: Any, tmp_path: Path) -> None:
+    def fake_run_sync(**kwargs: Any) -> int:
+        del kwargs
+        raise RuntimeError(
+            "Error: A new access token could not be retrieved because the refresh token is invalid."
+        )
+
+    logger_error = MagicMock()
+    monkeypatch.setattr(cli, "run_sync", fake_run_sync)
+    monkeypatch.setattr(cli.LOGGER, "error", logger_error)
+
+    exit_code = cli.main([str(tmp_path), "/Users/demo"])
+
+    assert exit_code == 1
+    logger_error.assert_called_once_with(
+        "Databricks authentication failed for profile '%s'. \nReauthenticate with: "
+        "databricks auth login --profile %s",
+        "DEFAULT",
+        "DEFAULT",
+    )
+
+
+def test_main_handles_generic_runtime_error(monkeypatch: Any, tmp_path: Path) -> None:
+    def fake_run_sync(**kwargs: Any) -> int:
+        del kwargs
+        raise RuntimeError("Command failed (1): databricks workspace get-status")
+
+    logger_error = MagicMock()
+    monkeypatch.setattr(cli, "run_sync", fake_run_sync)
+    monkeypatch.setattr(cli.LOGGER, "error", logger_error)
+
+    exit_code = cli.main([str(tmp_path), "/Users/demo"])
+
+    assert exit_code == 1
+    logger_error.assert_called_once_with("Command failed (1): databricks workspace get-status")

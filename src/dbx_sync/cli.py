@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from dbx_sync.sync import run_sync
 
 DEFAULT_POLL_INTERVAL_SECONDS = 1
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+LOGGER = logging.getLogger(__name__)
 
 
 def positive_int(value: str) -> int:
@@ -83,13 +85,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     parser = build_parser()
     args = parser.parse_args(argv)
-    return run_sync(
-        local_dir=Path(args.local_dir).expanduser().resolve(),
-        remote_path=args.workspace,
-        profile=args.profile,
-        poll_interval_seconds=args.poll_interval,
-        log_level=args.log_level,
-        dry_run=args.dry_run,
-        watch=args.watch,
-        force=args.force,
-    )
+    try:
+        return run_sync(
+            local_dir=Path(args.local_dir).expanduser().resolve(),
+            remote_path=args.workspace,
+            profile=args.profile,
+            poll_interval_seconds=args.poll_interval,
+            log_level=args.log_level,
+            dry_run=args.dry_run,
+            watch=args.watch,
+            force=args.force,
+        )
+    except RuntimeError as exc:
+        message = str(exc).strip()
+        if "refresh token is invalid" in message.lower():
+            LOGGER.error(
+                "Databricks authentication failed for profile '%s'. \nReauthenticate with: "
+                "databricks auth login --profile %s",
+                args.profile,
+                args.profile,
+            )
+            return 1
+
+        LOGGER.error(message)
+        return 1

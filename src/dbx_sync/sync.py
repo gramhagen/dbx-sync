@@ -18,10 +18,15 @@ LANGUAGE_EXTENSIONS = {
     "R": ".r",
     "SCALA": ".scala",
     "SQL": ".sql",
-    "JUPYTER": ".ipynb",
 }
 
-EXTENSION_LANGUAGES = {extension: language for language, extension in LANGUAGE_EXTENSIONS.items()}
+EXTENSION_LANGUAGES = {
+    ".ipynb": "PYTHON",
+    ".py": "PYTHON",
+    ".r": "R",
+    ".scala": "SCALA",
+    ".sql": "SQL",
+}
 
 LOGGER = logging.getLogger(__name__)
 
@@ -134,15 +139,12 @@ def run_cli(args: list[str]) -> str:
     return result.stdout
 
 
-def list_workspace(
-    remote_path: str, profile: str, modified_after_ms: int | None
-) -> list[WorkspaceItem]:
+def list_workspace(remote_path: str, profile: str) -> list[WorkspaceItem]:
     """List notebook and file objects under a workspace path.
 
     Args:
         remote_path: Workspace folder to enumerate.
         profile: Databricks CLI profile name.
-        modified_after_ms: Optional lower bound for notebook modification time.
 
     Returns:
         list[WorkspaceItem]: Supported workspace objects returned by the CLI.
@@ -151,8 +153,6 @@ def list_workspace(
         RuntimeError: If the CLI response cannot be parsed as expected JSON.
     """
     cmd = ["databricks", "--profile", profile, "workspace", "list"]
-    if modified_after_ms is not None:
-        cmd += ["--notebooks-modified-after", str(modified_after_ms)]
     cmd += ["--output", "json", remote_path]
     raw = run_cli(cmd)
     try:
@@ -253,7 +253,7 @@ def download_workspace_item(item: WorkspaceItem, local_path: Path, profile: str)
         str(local_path),
     ]
     if item.object_type == "NOTEBOOK":
-        if item.language == "JUPYTER" or local_path.suffix.lower() == ".ipynb":
+        if local_path.suffix.lower() == ".ipynb":
             cmd += ["--format", "JUPYTER"]
         else:
             cmd += ["--format", "SOURCE"]
@@ -285,13 +285,11 @@ def upload_workspace_item(item: WorkspaceItem, local_path: Path, profile: str) -
         "--overwrite",
     ]
     if item.object_type == "NOTEBOOK":
-        if item.language == "JUPYTER" or local_path.suffix.lower() == ".ipynb":
+        if local_path.suffix.lower() == ".ipynb":
             cmd += ["--format", "JUPYTER"]
         else:
-            cmd += ["--format", "SOURCE"]
-            language = item.language or EXTENSION_LANGUAGES.get(local_path.suffix.lower())
-            if language and language != "JUPYTER":
-                cmd += ["--language", language]
+            language = item.language or EXTENSION_LANGUAGES.get(local_path.suffix.lower(), "PYTHON")
+            cmd += ["--format", "SOURCE", "--language", language]
     else:
         cmd += ["--format", "AUTO"]
     run_cli(cmd)
@@ -399,7 +397,7 @@ def _resolve_file_action(
     else:
         relative_name = remote_path[len(remote_root.rstrip("/")) :].lstrip("/")
         if remote_item.object_type == "NOTEBOOK" and remote_item.language:
-            extension = LANGUAGE_EXTENSIONS.get(remote_item.language, "")
+            extension = LANGUAGE_EXTENSIONS.get(remote_item.language, ".py")
             local_path = local_dir / f"{relative_name}{extension}"
         else:
             local_path = local_dir / relative_name
@@ -476,13 +474,9 @@ def run_sync_pass(
     if not isinstance(files_state, dict):
         raise RuntimeError("Config 'files' entry must be a JSON object.")
 
-    poll_started_ms = int(time.time() * 1000)
-    modified_after_ms = config.get("last_remote_poll_ms")
     local_files = tracked_local_files(local_dir)
 
-    remote_candidates = {
-        item.path: item for item in list_workspace(remote_root, profile, modified_after_ms)
-    }
+    remote_candidates = {item.path: item for item in list_workspace(remote_root, profile)}
 
     for local_path in local_files:
         remote_name = (
@@ -580,7 +574,6 @@ def run_sync_pass(
             skipped += 1
 
     if not dry_run:
-        config["last_remote_poll_ms"] = poll_started_ms
         config_path.parent.mkdir(parents=True, exist_ok=True)
         with config_path.open("w", encoding="utf-8") as handle:
             json.dump(config, handle, indent=2)
@@ -684,10 +677,6 @@ def run_sync(
 
     existing_config = load_saved_config(config_path)
     files_state = existing_config.get("files") if isinstance(existing_config, dict) else None
-    last_remote_poll_ms = (
-        existing_config.get("last_remote_poll_ms") if isinstance(existing_config, dict) else None
-    )
-
     config = {
         "version": "v1",
         "profile": profile,
@@ -695,9 +684,6 @@ def run_sync(
         "log_level": resolved_log_level,
         "remote_path": resolved_remote_path,
         "local_dir": str(resolved_local_dir),
-        "last_remote_poll_ms": (
-            last_remote_poll_ms if isinstance(last_remote_poll_ms, int) else None
-        ),
         "files": files_state if isinstance(files_state, dict) else {},
     }
 
