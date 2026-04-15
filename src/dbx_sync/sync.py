@@ -22,10 +22,7 @@ LANGUAGE_EXTENSIONS = {
 
 EXTENSION_LANGUAGES = {
     ".ipynb": "PYTHON",
-    ".py": "PYTHON",
-    ".r": "R",
-    ".scala": "SCALA",
-    ".sql": "SQL",
+    **{v: k for k, v in LANGUAGE_EXTENSIONS.items()},
 }
 
 LOGGER = logging.getLogger(__name__)

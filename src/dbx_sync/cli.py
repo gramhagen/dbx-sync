@@ -12,24 +12,6 @@ LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 LOGGER = logging.getLogger(__name__)
 
 
-def positive_int(value: str) -> int:
-    """Parse a strictly positive integer argument.
-
-    Args:
-        value: Raw command-line argument text.
-
-    Returns:
-        int: Parsed positive integer value.
-
-    Raises:
-        argparse.ArgumentTypeError: If the value is not a positive integer.
-    """
-    parsed = int(value)
-    if parsed < 1:
-        raise argparse.ArgumentTypeError("must be a positive integer")
-    return parsed
-
-
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser for the sync tool."""
     parser = argparse.ArgumentParser(
@@ -42,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-p",
         "--poll-interval",
-        type=positive_int,
+        type=lambda p: max(1, int(p)),
         default=DEFAULT_POLL_INTERVAL_SECONDS,
         help="Polling interval in seconds when running in watch mode",
     )
@@ -97,15 +79,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             force=args.force,
         )
     except RuntimeError as exc:
-        message = str(exc).strip()
-        if "refresh token is invalid" in message.lower():
-            LOGGER.error(
-                "Databricks authentication failed for profile '%s'. \nReauthenticate with: "
-                "databricks auth login --profile %s",
-                args.profile,
-                args.profile,
-            )
+        # print user-friendly instructions if error is reauthentication-related, otherwise re-raise
+        reauth = "refresh token is invalid" in str(exc).strip().lower()
+        if reauth and args.log_level != "DEBUG":
+            print(f"Databricks authentication failed for profile '{args.profile}'.")
+            print(f"Reauthenticate with: databricks auth login --profile {args.profile}")
             return 1
 
-        LOGGER.error(message)
-        return 1
+        raise
