@@ -84,18 +84,18 @@ def test_main_requires_local_and_workspace_arguments(monkeypatch: Any) -> None:
 
 
 def test_main_enforces_min_poll_interval(monkeypatch: Any, tmp_path: Path) -> None:
-    calls: dict[str, Any] = {}
-
     def fake_run_sync(**kwargs: Any) -> int:
-        calls.update(kwargs)
+        del kwargs
         return 0
 
     monkeypatch.setattr(cli, "run_sync", fake_run_sync)
 
-    exit_code = cli.main([str(tmp_path), "/Users/demo", "--poll-interval", "0"])
-
-    assert exit_code == 0
-    assert calls["poll_interval_seconds"] == 1
+    try:
+        cli.main([str(tmp_path), "/Users/demo", "--poll-interval", "0"])
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("expected argparse to reject a non-positive poll interval")
 
 
 def test_main_handles_invalid_refresh_token_error(

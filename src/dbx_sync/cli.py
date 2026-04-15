@@ -12,8 +12,23 @@ LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 LOGGER = logging.getLogger(__name__)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the command-line parser for the sync tool."""
+def positive_int(value: str) -> int:
+    """Parse a positive integer argument for argparse."""
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Parse CLI arguments and run a sync operation.
+
+    Args:
+        argv: Optional argument vector used instead of sys.argv.
+
+    Returns:
+        int: Process exit code from the sync operation.
+    """
     parser = argparse.ArgumentParser(
         prog="dbx-sync",
         description="Synchronize Databricks workspace files to a local directory.",
@@ -24,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-p",
         "--poll-interval",
-        type=lambda p: max(1, int(p)),
+        type=positive_int,
         default=DEFAULT_POLL_INTERVAL_SECONDS,
         help="Polling interval in seconds when running in watch mode",
     )
@@ -53,20 +68,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Force a refresh by clearing saved sync state before running",
     )
-    return parser
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    """Parse CLI arguments and run a sync operation.
-
-    Args:
-        argv: Optional argument vector used instead of sys.argv.
-
-    Returns:
-        int: Process exit code from the sync operation.
-    """
-    parser = build_parser()
     args = parser.parse_args(argv)
+
     try:
         return run_sync(
             local_dir=Path(args.local_dir).expanduser().resolve(),
