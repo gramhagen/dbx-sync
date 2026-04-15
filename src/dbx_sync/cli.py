@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import logging
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -9,7 +8,6 @@ from dbx_sync.sync import run_sync
 
 DEFAULT_POLL_INTERVAL_SECONDS = 1
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-LOGGER = logging.getLogger(__name__)
 
 
 def positive_int(value: str) -> int:

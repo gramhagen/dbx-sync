@@ -100,8 +100,9 @@ If your local directory does not exist, the tool will attempt to create it for y
 
 ## Notes on Jupyter Notebooks
 
-Jupyter notebooks are not represented differently than normal notebooks when using Databricks CLI `databricks workspace list`, so for cases where there is not a matching local .ipynb file, we export those files as .py
-You can manually export them as .ipynb first if you wish to avoid this with `databricks workspace export <FILE> --format JUPYTER > <FILE>.ipynb`
+ Jupyter notebooks are represented the same as other notebooks when using Databricks CLI `databricks workspace list`. For cases where there is not a matching local `.ipynb` file, we export those files as `.py`.
+
+ You can manually export them as `.ipynb` first if you wish to avoid this, using `databricks workspace export <FILE> --format JUPYTER > <FILE>.ipynb`.
 
 ## Alternatives
 Yes, I recognize there are a variety of official ways to do something close to this, but none of them fit my desired workflow well. So here are some references for alternatives.
@@ -113,8 +114,8 @@ Yes, I recognize there are a variety of official ways to do something close to t
 
 ## Development
 
-See [CONTRIBUTING.md](/home/scgraham/repos/dbx-sync/CONTRIBUTING.md) for local development, testing, release, and repository workflow details.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for local development, testing, release, and repository workflow details.
 
 ## License
 
-MIT. See [LICENSE](/home/scgraham/repos/dbx-sync/LICENSE).
+MIT. See [LICENSE](./LICENSE).
