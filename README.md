@@ -102,7 +102,7 @@ If your local directory does not exist, the tool will attempt to create it for y
 
  Jupyter notebooks are represented the same as other notebooks when using Databricks CLI `databricks workspace list`. For cases where there is not a matching local `.ipynb` file, we export those files as `.py`.
 
- You can manually export them as `.ipynb` first if you wish to avoid this, using `databricks workspace export <FILE> --format JUPYTER > <FILE>.ipynb`.
+ You can manually export them as `.ipynb` first if you wish to avoid this, using `databricks workspace export <FILE> --format JUPYTER --file <FILE>.ipynb`.
 
 ## Alternatives
 Yes, I recognize there are a variety of official ways to do something close to this, but none of them fit my desired workflow well. So here are some references for alternatives.
