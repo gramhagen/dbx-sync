@@ -41,6 +41,12 @@ Install `dbx-sync` as a tool so you can run it directly from your shell:
 uv tool install dbx-sync
 ```
 
+#### Update tool
+
+```bash
+uv tool upgrade dbx-sync
+```
+
 ### Alternative: install with pip
 
 If you prefer a standard virtual environment workflow, install the package with `pip`:
@@ -90,7 +96,13 @@ dbx-sync ./local-project /Workspace/Users/me/project \
 
 Use `--force` to clear saved sync state before a fresh pass.
 
-The local directory may start empty or not exist yet. On a non-dry-run sync, the tool creates what it needs under that directory when files or sync state are written.
+If your local directory does not exist, the tool will attempt to create it for you (when not in dry-run mode).
+
+## Notes on Jupyter Notebooks
+
+ Jupyter notebooks are represented the same as other notebooks when using Databricks CLI `databricks workspace list`. For cases where there is not a matching local `.ipynb` file, we export those files as `.py`.
+
+ You can manually export them as `.ipynb` first if you wish to avoid this, using `databricks workspace export <FILE> --format JUPYTER --file <FILE>.ipynb`.
 
 ## Alternatives
 Yes, I recognize there are a variety of official ways to do something close to this, but none of them fit my desired workflow well. So here are some references for alternatives.
@@ -102,8 +114,8 @@ Yes, I recognize there are a variety of official ways to do something close to t
 
 ## Development
 
-See [CONTRIBUTING.md](/home/scgraham/repos/dbx-sync/CONTRIBUTING.md) for local development, testing, release, and repository workflow details.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for local development, testing, release, and repository workflow details.
 
 ## License
 
-MIT. See [LICENSE](/home/scgraham/repos/dbx-sync/LICENSE).
+MIT. See [LICENSE](./LICENSE).

@@ -15,7 +15,6 @@ def test_language_extensions_cover_databricks_notebook_languages() -> None:
         "R": ".r",
         "SCALA": ".scala",
         "SQL": ".sql",
-        "JUPYTER": ".ipynb",
     }
 
     assert sync.EXTENSION_LANGUAGES == {
@@ -23,7 +22,7 @@ def test_language_extensions_cover_databricks_notebook_languages() -> None:
         ".r": "R",
         ".scala": "SCALA",
         ".sql": "SQL",
-        ".ipynb": "JUPYTER",
+        ".ipynb": "PYTHON",
     }
 
 
@@ -114,7 +113,7 @@ def test_list_workspace_parses_supported_items(mock_run_cli: MagicMock) -> None:
         ]
     )
 
-    items = sync.list_workspace("/repos", "DEFAULT", None)
+    items = sync.list_workspace("/repos", "DEFAULT")
 
     assert [(item.path, item.object_type) for item in items] == [
         ("/repos/nb1", "NOTEBOOK"),
@@ -123,14 +122,13 @@ def test_list_workspace_parses_supported_items(mock_run_cli: MagicMock) -> None:
 
 
 @patch("dbx_sync.sync.run_cli")
-def test_list_workspace_includes_modified_after_flag(mock_run_cli: MagicMock) -> None:
+def test_list_workspace_does_not_include_modified_after_flag(mock_run_cli: MagicMock) -> None:
     mock_run_cli.return_value = "[]"
 
-    sync.list_workspace("/repos", "DEFAULT", 5000)
+    sync.list_workspace("/repos", "DEFAULT")
 
     cmd = mock_run_cli.call_args[0][0]
-    assert "--notebooks-modified-after" in cmd
-    assert "5000" in cmd
+    assert "--notebooks-modified-after" not in cmd
 
 
 @patch("dbx_sync.sync.run_cli")
@@ -138,7 +136,7 @@ def test_list_workspace_bad_json_raises(mock_run_cli: MagicMock) -> None:
     mock_run_cli.return_value = "not json"
 
     try:
-        sync.list_workspace("/repos", "DEFAULT", None)
+        sync.list_workspace("/repos", "DEFAULT")
     except RuntimeError as exc:
         assert "Failed to parse JSON" in str(exc)
     else:
@@ -197,7 +195,7 @@ def test_download_workspace_item_file_uses_auto(mock_run_cli: MagicMock, tmp_pat
 def test_download_workspace_item_jupyter_uses_jupyter_format(
     mock_run_cli: MagicMock, tmp_path: Path
 ) -> None:
-    item = sync.WorkspaceItem("/repos/nb", "NOTEBOOK", "JUPYTER", 1000)
+    item = sync.WorkspaceItem("/repos/nb", "NOTEBOOK", "PYTHON", 1000)
 
     sync.download_workspace_item(item, tmp_path / "nb.ipynb", "DEFAULT")
 
@@ -227,7 +225,7 @@ def test_upload_workspace_item_jupyter_uses_jupyter_format(
 ) -> None:
     local_path = tmp_path / "nb.ipynb"
     local_path.write_text("{}", encoding="utf-8")
-    item = sync.WorkspaceItem("/repos/nb", "NOTEBOOK", "JUPYTER", 1000)
+    item = sync.WorkspaceItem("/repos/nb", "NOTEBOOK", "PYTHON", 1000)
 
     sync.upload_workspace_item(item, local_path, "DEFAULT")
 
@@ -551,7 +549,7 @@ def test_run_sync_pass_first_sync_does_not_filter_remote_listing(
 
     sync.run_sync_pass(config, config_path, dry_run=True)
 
-    assert mock_list_workspace.call_args.args == ("/workspace", "DEFAULT", None)
+    assert mock_list_workspace.call_args.args == ("/workspace", "DEFAULT")
     mock_get_status.assert_called_once()
 
 
@@ -954,7 +952,7 @@ def test_run_sync_allows_missing_local_directory(
         "removed": 0,
         "skipped": 0,
     }
-    mock_list_workspace.assert_called_once_with("/workspace", "DEFAULT", None)
+    mock_list_workspace.assert_called_once_with("/workspace", "DEFAULT")
     mock_get_status.assert_not_called()
 
 

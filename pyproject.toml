@@ -4,13 +4,16 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dbx-sync"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Synchronize Databricks workspace content with a local directory."
 authors = [{ name = "gramhagen" }]
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 dependencies = []
+
+[tool.hatch.version]
+path = "src/dbx_sync/__init__.py"
 
 [project.urls]
 Repository = "https://github.com/gramhagen/dbx-sync"
@@ -20,10 +23,10 @@ dbx-sync = "dbx_sync.cli:main"
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4.0",
-    "pytest-cov>=6.0.0",
-    "ruff>=0.11.0",
-    "ty>=0.0.23",
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.10",
+    "ty>=0.0.30",
 ]
 
 [tool.hatch.build.targets.wheel]

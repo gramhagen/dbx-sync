@@ -83,7 +83,7 @@ def test_main_requires_local_and_workspace_arguments(monkeypatch: Any) -> None:
         raise AssertionError("expected argparse to require positional arguments")
 
 
-def test_main_rejects_non_positive_poll_interval(monkeypatch: Any, tmp_path: Path) -> None:
+def test_main_enforces_min_poll_interval(monkeypatch: Any, tmp_path: Path) -> None:
     def fake_run_sync(**kwargs: Any) -> int:
         del kwargs
         return 0
@@ -96,3 +96,39 @@ def test_main_rejects_non_positive_poll_interval(monkeypatch: Any, tmp_path: Pat
         assert exc.code == 2
     else:
         raise AssertionError("expected argparse to reject a non-positive poll interval")
+
+
+def test_main_handles_invalid_refresh_token_error(
+    monkeypatch: Any, tmp_path: Path, capsys: Any
+) -> None:
+    def fake_run_sync(**kwargs: Any) -> int:
+        del kwargs
+        raise RuntimeError(
+            "Error: A new access token could not be retrieved because the refresh token is invalid."
+        )
+
+    monkeypatch.setattr(cli, "run_sync", fake_run_sync)
+
+    exit_code = cli.main([str(tmp_path), "/Users/demo"])
+    output = capsys.readouterr().out
+
+    assert exit_code == 1
+    assert output == (
+        "Databricks authentication failed for profile 'DEFAULT'.\n"
+        "Reauthenticate with: databricks auth login --profile DEFAULT\n"
+    )
+
+
+def test_main_handles_generic_runtime_error(monkeypatch: Any, tmp_path: Path) -> None:
+    def fake_run_sync(**kwargs: Any) -> int:
+        del kwargs
+        raise RuntimeError("Command failed (1): databricks workspace get-status")
+
+    monkeypatch.setattr(cli, "run_sync", fake_run_sync)
+
+    try:
+        cli.main([str(tmp_path), "/Users/demo"])
+    except RuntimeError as exc:
+        assert str(exc) == "Command failed (1): databricks workspace get-status"
+    else:
+        raise AssertionError("expected RuntimeError to be re-raised for non-reauth errors")
