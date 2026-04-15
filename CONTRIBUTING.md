@@ -49,17 +49,23 @@ The HTML coverage report is written to `htmlcov/`.
 
 ## Packaging And Release
 
-Build and publish with uv.
+Releases are published by GitHub Actions via `.github/workflows/release.yml`.
+
+- Trigger: push a git tag that starts with `v` (workflow pattern: `v*`, for example `v0.2.0`).
+
+Example release flow:
 
 ```bash
-uv build
-uv publish
+git tag v0.2.0
+git push origin v0.2.0
 ```
+
+## Local testing
 
 If you want to test the packaged CLI experience locally, install it as a uv tool:
 
 ```bash
-uv tool install .
+uv tool install --editable .
 ```
 
 ## License
