@@ -804,7 +804,7 @@ def test_run_forever_retries_after_sync_pass_failure(
     assert mock_sleep.call_count == 2
 
 
-@patch("dbx_sync.sync.time.sleep")
+@patch("dbx_sync.sync.time.sleep", side_effect=KeyboardInterrupt)
 @patch(
     "dbx_sync.sync.run_sync_pass",
     return_value={"downloaded": 0, "uploaded": 0, "conflicts": 1, "removed": 0, "skipped": 0},
