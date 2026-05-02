@@ -621,6 +621,20 @@ def run_forever(config: dict[str, Any], config_path: Path, dry_run: bool) -> int
                     result["removed"],
                     result["skipped"],
                 )
+                if result["conflicts"] > 0:
+                    conflicted_paths = [
+                        path
+                        for path, state in config.get("files", {}).items()
+                        if state.get("last_action") == "conflict"
+                    ]
+                    LOGGER.error(
+                        "Stopping watch mode: %d conflict(s) detected. "
+                        "Conflicting file(s): %s. "
+                        "Run with --force to clear sync state and retry.",
+                        result["conflicts"],
+                        ", ".join(conflicted_paths),
+                    )
+                    return 1
 
             time.sleep(int(config["poll_interval_seconds"]))
     except KeyboardInterrupt:

@@ -804,6 +804,30 @@ def test_run_forever_retries_after_sync_pass_failure(
     assert mock_sleep.call_count == 2
 
 
+@patch("dbx_sync.sync.time.sleep", side_effect=KeyboardInterrupt)
+@patch(
+    "dbx_sync.sync.run_sync_pass",
+    return_value={"downloaded": 0, "uploaded": 0, "conflicts": 1, "removed": 0, "skipped": 0},
+)
+def test_run_forever_exits_on_conflict(
+    mock_run_sync_pass: MagicMock, mock_sleep: MagicMock, tmp_path: Path
+) -> None:
+    config = {
+        "local_dir": str(tmp_path),
+        "remote_path": "/workspace",
+        "poll_interval_seconds": 1,
+        "files": {
+            "/workspace/nb": {**sync._default_file_state(), "last_action": "conflict"},
+        },
+    }
+
+    result = sync.run_forever(config, tmp_path / "config.json", dry_run=False)
+
+    assert result == 1
+    mock_run_sync_pass.assert_called_once()
+    mock_sleep.assert_not_called()
+
+
 @patch(
     "dbx_sync.sync.run_sync_pass",
     return_value={"downloaded": 0, "uploaded": 0, "conflicts": 0, "removed": 0, "skipped": 0},
