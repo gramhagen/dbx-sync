@@ -5,6 +5,7 @@ import warnings
 from collections.abc import Sequence
 from pathlib import Path
 
+from dbx_sync import __version__
 from dbx_sync.sync import ForceType, run_sync
 
 DEFAULT_POLL_INTERVAL_SECONDS = 1
@@ -32,6 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         prog="dbx-sync",
         description="Synchronize Databricks workspace files to a local directory.",
     )
+    parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("local_dir", help="Local directory to sync")
     parser.add_argument("workspace", help="Databricks workspace folder to sync")
     parser.add_argument("--profile", default="DEFAULT", help="Databricks CLI profile name")
