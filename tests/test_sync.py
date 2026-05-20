@@ -1031,3 +1031,119 @@ def test_package_main_exits_with_cli_status(monkeypatch: Any) -> None:
         assert exc.code == 7
     else:
         raise AssertionError("expected package entrypoint to exit")
+
+
+@patch("dbx_sync.sync.upload_workspace_item")
+@patch("dbx_sync.sync.get_status", return_value={"object_type": "NOTEBOOK", "modified_at": 9000})
+@patch("dbx_sync.sync.list_workspace", return_value=[])
+def test_run_sync_pass_force_upload_overrides_skip(
+    mock_list_workspace: MagicMock,
+    mock_get_status: MagicMock,
+    mock_upload: MagicMock,
+    tmp_path: Path,
+) -> None:
+    local_file = tmp_path / "test.py"
+    local_file.write_text("# synced", encoding="utf-8")
+    local_mtime_ms = int(local_file.stat().st_mtime * 1000)
+    config_path = tmp_path / ".databricks" / "dbx-sync" / "config.json"
+    config = {
+        "local_dir": str(tmp_path),
+        "remote_path": "/workspace",
+        "profile": "DEFAULT",
+        "files": {
+            "/workspace/test": {
+                **sync._default_file_state(),
+                "local_path": str(local_file),
+                "object_type": "NOTEBOOK",
+                "language": "PYTHON",
+                "last_synced_remote_modified_ms": local_mtime_ms,
+                "last_synced_local_modified_ms": local_mtime_ms,
+            }
+        },
+    }
+
+    result = sync.run_sync_pass(config, config_path, dry_run=False, force_upload=True)
+
+    assert result["uploaded"] == 1
+    assert result["skipped"] == 0
+    mock_upload.assert_called_once()
+
+
+@patch("dbx_sync.sync.download_workspace_item")
+@patch("dbx_sync.sync.get_status", return_value=None)
+@patch("dbx_sync.sync.list_workspace")
+def test_run_sync_pass_force_download_overrides_skip(
+    mock_list_workspace: MagicMock,
+    mock_get_status: MagicMock,
+    mock_download: MagicMock,
+    tmp_path: Path,
+) -> None:
+    local_file = tmp_path / "test.py"
+    local_file.write_text("# synced", encoding="utf-8")
+    local_mtime_ms = int(local_file.stat().st_mtime * 1000)
+    remote_item = sync.WorkspaceItem("/workspace/test", "NOTEBOOK", "PYTHON", local_mtime_ms)
+    mock_list_workspace.return_value = [remote_item]
+    mock_download.side_effect = lambda item, path, profile: None
+    config_path = tmp_path / ".databricks" / "dbx-sync" / "config.json"
+    config = {
+        "local_dir": str(tmp_path),
+        "remote_path": "/workspace",
+        "profile": "DEFAULT",
+        "files": {
+            "/workspace/test": {
+                **sync._default_file_state(),
+                "local_path": str(local_file),
+                "object_type": "NOTEBOOK",
+                "language": "PYTHON",
+                "last_synced_remote_modified_ms": local_mtime_ms,
+                "last_synced_local_modified_ms": local_mtime_ms,
+            }
+        },
+    }
+
+    result = sync.run_sync_pass(config, config_path, dry_run=False, force_download=True)
+
+    assert result["downloaded"] == 1
+    assert result["skipped"] == 0
+    mock_download.assert_called_once()
+
+
+@patch("dbx_sync.sync.download_workspace_item")
+@patch("dbx_sync.sync.get_status", return_value=None)
+@patch("dbx_sync.sync.list_workspace")
+def test_run_sync_pass_force_download_takes_precedence_over_force_upload(
+    mock_list_workspace: MagicMock,
+    mock_get_status: MagicMock,
+    mock_download: MagicMock,
+    tmp_path: Path,
+) -> None:
+    local_file = tmp_path / "test.py"
+    local_file.write_text("# synced", encoding="utf-8")
+    local_mtime_ms = int(local_file.stat().st_mtime * 1000)
+    remote_item = sync.WorkspaceItem("/workspace/test", "NOTEBOOK", "PYTHON", local_mtime_ms)
+    mock_list_workspace.return_value = [remote_item]
+    mock_download.side_effect = lambda item, path, profile: None
+    config_path = tmp_path / ".databricks" / "dbx-sync" / "config.json"
+    config = {
+        "local_dir": str(tmp_path),
+        "remote_path": "/workspace",
+        "profile": "DEFAULT",
+        "files": {
+            "/workspace/test": {
+                **sync._default_file_state(),
+                "local_path": str(local_file),
+                "object_type": "NOTEBOOK",
+                "language": "PYTHON",
+                "last_synced_remote_modified_ms": local_mtime_ms,
+                "last_synced_local_modified_ms": local_mtime_ms,
+            }
+        },
+    }
+
+    result = sync.run_sync_pass(
+        config, config_path, dry_run=False, force_upload=True, force_download=True
+    )
+
+    assert result["downloaded"] == 1
+    assert result["uploaded"] == 0
+    mock_download.assert_called_once()

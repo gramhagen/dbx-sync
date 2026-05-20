@@ -449,7 +449,11 @@ def _resolve_file_action(
 
 
 def run_sync_pass(
-    config: dict[str, Any], config_path: Path, dry_run: bool = False
+    config: dict[str, Any],
+    config_path: Path,
+    dry_run: bool = False,
+    force_upload: bool = False,
+    force_download: bool = False,
 ) -> dict[str, int]:
     """Run one synchronization pass between local and remote content.
 
@@ -457,6 +461,8 @@ def run_sync_pass(
         config: Sync configuration and persisted state.
         config_path: Path where sync state should be written.
         dry_run: Whether to compute actions without applying them.
+        force_upload: Whether to force upload of all local files, ignoring sync state.
+        force_download: Whether to force download of all remote files, ignoring sync state.
 
     Returns:
         dict[str, int]: Counters for downloaded, uploaded, conflicts, removed, and skipped items.
@@ -511,6 +517,13 @@ def run_sync_pass(
 
         local_mtime_ms = int(local_path.stat().st_mtime * 1000) if local_path.exists() else None
         remote_mtime_ms = remote_item.modified_at
+
+        # Apply force overrides before logging or executing the action.
+        # force_download takes precedence over force_upload when both are set.
+        if force_download and remote_mtime_ms is not None:
+            action = "download"
+        elif force_upload and local_mtime_ms is not None:
+            action = "upload"
 
         if action == "skip":
             LOGGER.debug("SKIP: %s", local_path.name)
@@ -584,13 +597,21 @@ def run_sync_pass(
     }
 
 
-def run_forever(config: dict[str, Any], config_path: Path, dry_run: bool) -> int:
+def run_forever(
+    config: dict[str, Any],
+    config_path: Path,
+    dry_run: bool,
+    force_upload: bool = False,
+    force_download: bool = False,
+) -> int:
     """Run synchronization continuously until interrupted.
 
     Args:
         config: Sync configuration and persisted state.
         config_path: Path where sync state should be written.
         dry_run: Whether to compute actions without applying them.
+        force_upload: Whether to force upload of all local files, ignoring sync state.
+        force_download: Whether to force download of all remote files, ignoring sync state.
 
     Returns:
         int: Process exit code, returning zero on a clean interrupt.
@@ -605,7 +626,13 @@ def run_forever(config: dict[str, Any], config_path: Path, dry_run: bool) -> int
     try:
         while True:
             try:
-                result = run_sync_pass(config, config_path, dry_run=dry_run)
+                result = run_sync_pass(
+                    config,
+                    config_path,
+                    dry_run=dry_run,
+                    force_upload=force_upload,
+                    force_download=force_download,
+                )
             except Exception:
                 LOGGER.exception("Sync pass failed")
                 result = None
@@ -651,6 +678,8 @@ def run_sync(
     dry_run: bool,
     watch: bool,
     force: bool,
+    force_upload: bool = False,
+    force_download: bool = False,
 ) -> int:
     """Run a sync operation using fully resolved CLI parameters.
 
@@ -663,6 +692,8 @@ def run_sync(
         dry_run: Whether to compute actions without applying them.
         watch: Whether to continue syncing in a loop.
         force: Whether to clear saved sync state before starting.
+        force_upload: Whether to force upload of all local files, ignoring sync state.
+        force_download: Whether to force download of all remote files, ignoring sync state.
 
     Returns:
         int: Process exit code.
@@ -708,9 +739,21 @@ def run_sync(
         return 1
 
     if watch:
-        return run_forever(config, config_path, dry_run=dry_run)
+        return run_forever(
+            config,
+            config_path,
+            dry_run=dry_run,
+            force_upload=force_upload,
+            force_download=force_download,
+        )
 
-    result = run_sync_pass(config, config_path, dry_run=dry_run)
+    result = run_sync_pass(
+        config,
+        config_path,
+        dry_run=dry_run,
+        force_upload=force_upload,
+        force_download=force_download,
+    )
     LOGGER.info(
         "Sync pass complete: downloaded=%s, uploaded=%s, conflicts=%s, removed=%s, skipped=%s",
         result["downloaded"],

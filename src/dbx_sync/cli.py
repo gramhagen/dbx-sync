@@ -66,6 +66,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Force a refresh by clearing saved sync state before running",
     )
+    parser.add_argument(
+        "-fu",
+        "--force-upload",
+        action="store_true",
+        help="Force upload of all local files, ignoring sync state",
+    )
+    parser.add_argument(
+        "-fd",
+        "--force-download",
+        action="store_true",
+        help="Force download of all remote files, ignoring sync state",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -78,6 +90,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             dry_run=args.dry_run,
             watch=args.watch,
             force=args.force,
+            force_upload=args.force_upload,
+            force_download=args.force_download,
         )
     except RuntimeError as exc:
         # print user-friendly instructions if error is reauthentication-related, otherwise re-raise

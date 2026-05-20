@@ -28,6 +28,8 @@ def test_main_uses_explicit_flags(monkeypatch: Any, tmp_path: Path) -> None:
             "--dry-run",
             "--watch",
             "--force",
+            "--force-upload",
+            "--force-download",
         ]
     )
 
@@ -41,6 +43,8 @@ def test_main_uses_explicit_flags(monkeypatch: Any, tmp_path: Path) -> None:
         "dry_run": True,
         "watch": True,
         "force": True,
+        "force_upload": True,
+        "force_download": True,
     }
 
 
@@ -65,6 +69,8 @@ def test_main_uses_defaults_for_optional_flags(monkeypatch: Any, tmp_path: Path)
         "dry_run": False,
         "watch": False,
         "force": False,
+        "force_upload": False,
+        "force_download": False,
     }
 
 
