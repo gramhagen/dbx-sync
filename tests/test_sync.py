@@ -1083,7 +1083,6 @@ def test_run_sync_pass_force_download_overrides_skip(
     local_mtime_ms = int(local_file.stat().st_mtime * 1000)
     remote_item = sync.WorkspaceItem("/workspace/test", "NOTEBOOK", "PYTHON", local_mtime_ms)
     mock_list_workspace.return_value = [remote_item]
-    mock_download.side_effect = lambda item, path, profile: None
     config_path = tmp_path / ".databricks" / "dbx-sync" / "config.json"
     config = {
         "local_dir": str(tmp_path),
@@ -1122,7 +1121,6 @@ def test_run_sync_pass_force_download_takes_precedence_over_force_upload(
     local_mtime_ms = int(local_file.stat().st_mtime * 1000)
     remote_item = sync.WorkspaceItem("/workspace/test", "NOTEBOOK", "PYTHON", local_mtime_ms)
     mock_list_workspace.return_value = [remote_item]
-    mock_download.side_effect = lambda item, path, profile: None
     config_path = tmp_path / ".databricks" / "dbx-sync" / "config.json"
     config = {
         "local_dir": str(tmp_path),
