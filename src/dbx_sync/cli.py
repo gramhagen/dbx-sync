@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import warnings
 from collections.abc import Sequence
 from pathlib import Path
 
-from dbx_sync.sync import run_sync
+from dbx_sync.sync import ForceType, run_sync
 
 DEFAULT_POLL_INTERVAL_SECONDS = 1
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -80,6 +81,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    force_flags: list[tuple[str, ForceType]] = []
+    if args.force:
+        force_flags.append(("--force", ForceType.CLEAR))
+    if args.force_upload:
+        force_flags.append(("--force-upload", ForceType.UPLOAD))
+    if args.force_download:
+        force_flags.append(("--force-download", ForceType.DOWNLOAD))
+
+    if len(force_flags) > 1:
+        flag_names = ", ".join(name for name, _ in force_flags)
+        warnings.warn(
+            f"Multiple force flags specified ({flag_names}); only the last one will be applied.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+    force_type = force_flags[-1][1] if force_flags else None
+
     try:
         return run_sync(
             local_dir=Path(args.local_dir).expanduser().resolve(),
@@ -89,9 +108,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             log_level=args.log_level,
             dry_run=args.dry_run,
             watch=args.watch,
-            force=args.force,
-            force_upload=args.force_upload,
-            force_download=args.force_download,
+            force_type=force_type,
         )
     except RuntimeError as exc:
         # print user-friendly instructions if error is reauthentication-related, otherwise re-raise

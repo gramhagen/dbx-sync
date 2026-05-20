@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import Any
 
 import dbx_sync.cli as cli
+from dbx_sync.sync import ForceType
 
 
 def test_main_uses_explicit_flags(monkeypatch: Any, tmp_path: Path) -> None:
@@ -15,25 +17,31 @@ def test_main_uses_explicit_flags(monkeypatch: Any, tmp_path: Path) -> None:
 
     monkeypatch.setattr(cli, "run_sync", fake_run_sync)
 
-    exit_code = cli.main(
-        [
-            str(tmp_path),
-            "/Shared/example",
-            "--profile",
-            "WORKSPACE",
-            "--poll-interval",
-            "5",
-            "--log-level",
-            "DEBUG",
-            "--dry-run",
-            "--watch",
-            "--force",
-            "--force-upload",
-            "--force-download",
-        ]
-    )
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        exit_code = cli.main(
+            [
+                str(tmp_path),
+                "/Shared/example",
+                "--profile",
+                "WORKSPACE",
+                "--poll-interval",
+                "5",
+                "--log-level",
+                "DEBUG",
+                "--dry-run",
+                "--watch",
+                "--force",
+                "--force-upload",
+                "--force-download",
+            ]
+        )
 
     assert exit_code == 0
+    # All three flags → warning, last one (--force-download → DOWNLOAD) wins
+    assert len(caught) == 1
+    assert issubclass(caught[0].category, UserWarning)
+    assert "--force-download" in str(caught[0].message)
     assert calls == {
         "local_dir": tmp_path.resolve(),
         "profile": "WORKSPACE",
@@ -42,9 +50,7 @@ def test_main_uses_explicit_flags(monkeypatch: Any, tmp_path: Path) -> None:
         "log_level": "DEBUG",
         "dry_run": True,
         "watch": True,
-        "force": True,
-        "force_upload": True,
-        "force_download": True,
+        "force_type": ForceType.DOWNLOAD,
     }
 
 
@@ -68,10 +74,47 @@ def test_main_uses_defaults_for_optional_flags(monkeypatch: Any, tmp_path: Path)
         "log_level": "INFO",
         "dry_run": False,
         "watch": False,
-        "force": False,
-        "force_upload": False,
-        "force_download": False,
+        "force_type": None,
     }
+
+
+def test_main_single_force_flag_no_warning(monkeypatch: Any, tmp_path: Path) -> None:
+    calls: dict[str, Any] = {}
+
+    def fake_run_sync(**kwargs: Any) -> int:
+        calls.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(cli, "run_sync", fake_run_sync)
+
+    for flag, expected_type in [
+        ("--force", ForceType.CLEAR),
+        ("--force-upload", ForceType.UPLOAD),
+        ("--force-download", ForceType.DOWNLOAD),
+    ]:
+        calls.clear()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cli.main([str(tmp_path), "/Users/demo", flag])
+
+        assert len(caught) == 0, f"unexpected warning for {flag}: {caught}"
+        assert calls["force_type"] == expected_type
+
+
+def test_main_multiple_force_flags_warns(monkeypatch: Any, tmp_path: Path) -> None:
+    def fake_run_sync(**kwargs: Any) -> int:
+        return 0
+
+    monkeypatch.setattr(cli, "run_sync", fake_run_sync)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cli.main([str(tmp_path), "/Users/demo", "--force", "--force-upload"])
+
+    assert len(caught) == 1
+    assert issubclass(caught[0].category, UserWarning)
+    assert "--force" in str(caught[0].message)
+    assert "--force-upload" in str(caught[0].message)
 
 
 def test_main_requires_local_and_workspace_arguments(monkeypatch: Any) -> None:
