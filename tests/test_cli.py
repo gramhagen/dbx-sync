@@ -8,6 +8,18 @@ import dbx_sync.cli as cli
 from dbx_sync.sync import ForceType
 
 
+def test_main_supports_version_flag(capsys: Any) -> None:
+    try:
+        cli.main(["--version"])
+    except SystemExit as exc:
+        assert exc.code == 0
+    else:
+        raise AssertionError("expected argparse version action to exit")
+
+    output = capsys.readouterr().out
+    assert output == f"dbx-sync {cli.__version__}\n"
+
+
 def test_main_uses_explicit_flags(monkeypatch: Any, tmp_path: Path) -> None:
     calls: dict[str, Any] = {}
 
