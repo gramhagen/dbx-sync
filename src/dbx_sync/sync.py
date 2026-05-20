@@ -709,6 +709,13 @@ def run_sync(
         LOGGER.error("Poll interval must be at least 1 second.")
         return 1
 
+    if watch and (force or force_upload or force_download):
+        LOGGER.error(
+            "Force options (--force, --force-upload, --force-download) can only be used for a "
+            "single sync pass and cannot be combined with --watch."
+        )
+        return 1
+
     if resolved_local_dir.exists() and not resolved_local_dir.is_dir():
         LOGGER.error("Local sync path is not a directory: %s", resolved_local_dir)
         return 1

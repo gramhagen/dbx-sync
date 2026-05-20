@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import dbx_sync.sync as sync
 
 
@@ -1009,6 +1011,37 @@ def test_run_sync_rejects_non_positive_poll_interval(tmp_path: Path) -> None:
         watch=False,
         force=False,
     )
+
+    assert result == 1
+
+
+@pytest.mark.parametrize(
+    "force_kwargs",
+    [
+        {"force": True},
+        {"force_upload": True},
+        {"force_download": True},
+        {"force": True, "force_upload": True, "force_download": True},
+    ],
+)
+def test_run_sync_rejects_force_flags_combined_with_watch(
+    tmp_path: Path, force_kwargs: dict[str, Any]
+) -> None:
+    base_kwargs: dict[str, Any] = {
+        "local_dir": tmp_path,
+        "remote_path": "/workspace/test",
+        "profile": "DEFAULT",
+        "poll_interval_seconds": 1,
+        "log_level": "INFO",
+        "dry_run": False,
+        "watch": True,
+        "force": False,
+        "force_upload": False,
+        "force_download": False,
+    }
+    base_kwargs.update(force_kwargs)
+
+    result = sync.run_sync(**base_kwargs)
 
     assert result == 1
 
