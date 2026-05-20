@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 import dbx_sync.sync as sync
 
 
@@ -848,7 +850,6 @@ def test_run_sync_single_pass_success(
         log_level="INFO",
         dry_run=False,
         watch=False,
-        force=False,
     )
 
     assert result == 0
@@ -870,7 +871,6 @@ def test_run_sync_missing_remote_parent_returns_one(
         log_level="INFO",
         dry_run=False,
         watch=False,
-        force=False,
     )
 
     assert result == 1
@@ -891,7 +891,6 @@ def test_run_sync_non_directory_remote_parent_returns_one(
         log_level="INFO",
         dry_run=False,
         watch=False,
-        force=False,
     )
 
     assert result == 1
@@ -916,7 +915,6 @@ def test_run_sync_watch_mode_delegates_to_run_forever(
         log_level="DEBUG",
         dry_run=True,
         watch=True,
-        force=False,
     )
 
     assert result == 0
@@ -945,7 +943,7 @@ def test_run_sync_force_removes_existing_config(
         log_level="INFO",
         dry_run=False,
         watch=False,
-        force=True,
+        force_type=sync.ForceType.CLEAR,
     )
 
     assert result == 0
@@ -992,7 +990,6 @@ def test_run_sync_rejects_non_directory_local_path(tmp_path: Path) -> None:
         log_level="INFO",
         dry_run=False,
         watch=False,
-        force=False,
     )
 
     assert result == 1
@@ -1007,7 +1004,27 @@ def test_run_sync_rejects_non_positive_poll_interval(tmp_path: Path) -> None:
         log_level="INFO",
         dry_run=False,
         watch=False,
-        force=False,
+    )
+
+    assert result == 1
+
+
+@pytest.mark.parametrize(
+    "force_type",
+    [sync.ForceType.CLEAR, sync.ForceType.UPLOAD, sync.ForceType.DOWNLOAD],
+)
+def test_run_sync_rejects_force_type_combined_with_watch(
+    tmp_path: Path, force_type: sync.ForceType
+) -> None:
+    result = sync.run_sync(
+        local_dir=tmp_path,
+        remote_path="/workspace/test",
+        profile="DEFAULT",
+        poll_interval_seconds=1,
+        log_level="INFO",
+        dry_run=False,
+        watch=True,
+        force_type=force_type,
     )
 
     assert result == 1
@@ -1031,3 +1048,122 @@ def test_package_main_exits_with_cli_status(monkeypatch: Any) -> None:
         assert exc.code == 7
     else:
         raise AssertionError("expected package entrypoint to exit")
+
+
+@patch("dbx_sync.sync.upload_workspace_item")
+@patch("dbx_sync.sync.get_status", return_value={"object_type": "NOTEBOOK", "modified_at": 9000})
+@patch("dbx_sync.sync.list_workspace", return_value=[])
+def test_run_sync_pass_force_upload_overrides_skip(
+    mock_list_workspace: MagicMock,
+    mock_get_status: MagicMock,
+    mock_upload: MagicMock,
+    tmp_path: Path,
+) -> None:
+    local_file = tmp_path / "test.py"
+    local_file.write_text("# synced", encoding="utf-8")
+    local_mtime_ms = int(local_file.stat().st_mtime * 1000)
+    config_path = tmp_path / ".databricks" / "dbx-sync" / "config.json"
+    config = {
+        "local_dir": str(tmp_path),
+        "remote_path": "/workspace",
+        "profile": "DEFAULT",
+        "files": {
+            "/workspace/test": {
+                **sync._default_file_state(),
+                "local_path": str(local_file),
+                "object_type": "NOTEBOOK",
+                "language": "PYTHON",
+                "last_synced_remote_modified_ms": local_mtime_ms,
+                "last_synced_local_modified_ms": local_mtime_ms,
+            }
+        },
+    }
+
+    result = sync.run_sync_pass(
+        config, config_path, dry_run=False, force_type=sync.ForceType.UPLOAD
+    )
+
+    assert result["uploaded"] == 1
+    assert result["skipped"] == 0
+    mock_upload.assert_called_once()
+
+
+@patch("dbx_sync.sync.download_workspace_item")
+@patch("dbx_sync.sync.get_status", return_value=None)
+@patch("dbx_sync.sync.list_workspace")
+def test_run_sync_pass_force_download_overrides_skip(
+    mock_list_workspace: MagicMock,
+    mock_get_status: MagicMock,
+    mock_download: MagicMock,
+    tmp_path: Path,
+) -> None:
+    local_file = tmp_path / "test.py"
+    local_file.write_text("# synced", encoding="utf-8")
+    local_mtime_ms = int(local_file.stat().st_mtime * 1000)
+    remote_item = sync.WorkspaceItem("/workspace/test", "NOTEBOOK", "PYTHON", local_mtime_ms)
+    mock_list_workspace.return_value = [remote_item]
+    config_path = tmp_path / ".databricks" / "dbx-sync" / "config.json"
+    config = {
+        "local_dir": str(tmp_path),
+        "remote_path": "/workspace",
+        "profile": "DEFAULT",
+        "files": {
+            "/workspace/test": {
+                **sync._default_file_state(),
+                "local_path": str(local_file),
+                "object_type": "NOTEBOOK",
+                "language": "PYTHON",
+                "last_synced_remote_modified_ms": local_mtime_ms,
+                "last_synced_local_modified_ms": local_mtime_ms,
+            }
+        },
+    }
+
+    result = sync.run_sync_pass(
+        config, config_path, dry_run=False, force_type=sync.ForceType.DOWNLOAD
+    )
+
+    assert result["downloaded"] == 1
+    assert result["skipped"] == 0
+    mock_download.assert_called_once()
+
+
+@patch("dbx_sync.sync.download_workspace_item")
+@patch("dbx_sync.sync.get_status", return_value=None)
+@patch("dbx_sync.sync.list_workspace")
+def test_run_sync_pass_force_download_takes_precedence_over_force_upload(
+    mock_list_workspace: MagicMock,
+    mock_get_status: MagicMock,
+    mock_download: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """DOWNLOAD enum value results in a download even when UPLOAD would otherwise apply."""
+    local_file = tmp_path / "test.py"
+    local_file.write_text("# synced", encoding="utf-8")
+    local_mtime_ms = int(local_file.stat().st_mtime * 1000)
+    remote_item = sync.WorkspaceItem("/workspace/test", "NOTEBOOK", "PYTHON", local_mtime_ms)
+    mock_list_workspace.return_value = [remote_item]
+    config_path = tmp_path / ".databricks" / "dbx-sync" / "config.json"
+    config = {
+        "local_dir": str(tmp_path),
+        "remote_path": "/workspace",
+        "profile": "DEFAULT",
+        "files": {
+            "/workspace/test": {
+                **sync._default_file_state(),
+                "local_path": str(local_file),
+                "object_type": "NOTEBOOK",
+                "language": "PYTHON",
+                "last_synced_remote_modified_ms": local_mtime_ms,
+                "last_synced_local_modified_ms": local_mtime_ms,
+            }
+        },
+    }
+
+    result = sync.run_sync_pass(
+        config, config_path, dry_run=False, force_type=sync.ForceType.DOWNLOAD
+    )
+
+    assert result["downloaded"] == 1
+    assert result["uploaded"] == 0
+    mock_download.assert_called_once()

@@ -6,6 +6,7 @@ import subprocess
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,20 @@ EXTENSION_LANGUAGES = {
 }
 
 LOGGER = logging.getLogger(__name__)
+
+
+class ForceType(str, Enum):
+    """Specifies how to override the normal per-file sync decision.
+
+    Attributes:
+        CLEAR: Clear saved sync state before running (equivalent to old --force).
+        UPLOAD: Force upload of all local files, ignoring sync state.
+        DOWNLOAD: Force download of all remote files, ignoring sync state.
+    """
+
+    CLEAR = "clear"
+    UPLOAD = "upload"
+    DOWNLOAD = "download"
 
 
 @dataclass
@@ -449,7 +464,10 @@ def _resolve_file_action(
 
 
 def run_sync_pass(
-    config: dict[str, Any], config_path: Path, dry_run: bool = False
+    config: dict[str, Any],
+    config_path: Path,
+    dry_run: bool = False,
+    force_type: ForceType | None = None,
 ) -> dict[str, int]:
     """Run one synchronization pass between local and remote content.
 
@@ -457,6 +475,10 @@ def run_sync_pass(
         config: Sync configuration and persisted state.
         config_path: Path where sync state should be written.
         dry_run: Whether to compute actions without applying them.
+        force_type: Optional override for the sync decision. UPLOAD forces all
+            local files to be uploaded; DOWNLOAD forces all remote files to be
+            downloaded. CLEAR is handled before this function is called (it
+            removes saved state), so it has no additional effect here.
 
     Returns:
         dict[str, int]: Counters for downloaded, uploaded, conflicts, removed, and skipped items.
@@ -511,6 +533,12 @@ def run_sync_pass(
 
         local_mtime_ms = int(local_path.stat().st_mtime * 1000) if local_path.exists() else None
         remote_mtime_ms = remote_item.modified_at
+
+        # Apply force overrides before logging or executing the action.
+        if force_type is ForceType.DOWNLOAD and remote_mtime_ms is not None:
+            action = "download"
+        elif force_type is ForceType.UPLOAD and local_mtime_ms is not None:
+            action = "upload"
 
         if action == "skip":
             LOGGER.debug("SKIP: %s", local_path.name)
@@ -584,7 +612,11 @@ def run_sync_pass(
     }
 
 
-def run_forever(config: dict[str, Any], config_path: Path, dry_run: bool) -> int:
+def run_forever(
+    config: dict[str, Any],
+    config_path: Path,
+    dry_run: bool,
+) -> int:
     """Run synchronization continuously until interrupted.
 
     Args:
@@ -605,7 +637,11 @@ def run_forever(config: dict[str, Any], config_path: Path, dry_run: bool) -> int
     try:
         while True:
             try:
-                result = run_sync_pass(config, config_path, dry_run=dry_run)
+                result = run_sync_pass(
+                    config,
+                    config_path,
+                    dry_run=dry_run,
+                )
             except Exception:
                 LOGGER.exception("Sync pass failed")
                 result = None
@@ -650,7 +686,7 @@ def run_sync(
     log_level: str,
     dry_run: bool,
     watch: bool,
-    force: bool,
+    force_type: ForceType | None = None,
 ) -> int:
     """Run a sync operation using fully resolved CLI parameters.
 
@@ -662,7 +698,9 @@ def run_sync(
         log_level: Desired process log level.
         dry_run: Whether to compute actions without applying them.
         watch: Whether to continue syncing in a loop.
-        force: Whether to clear saved sync state before starting.
+        force_type: Optional force override. CLEAR removes saved sync state before
+            starting; UPLOAD forces all local files to be uploaded; DOWNLOAD forces
+            all remote files to be downloaded. Cannot be combined with watch mode.
 
     Returns:
         int: Process exit code.
@@ -678,11 +716,18 @@ def run_sync(
         LOGGER.error("Poll interval must be at least 1 second.")
         return 1
 
+    if watch and force_type is not None:
+        LOGGER.error(
+            "Force options (--force, --force-upload, --force-download) can only be used for a "
+            "single sync pass and cannot be combined with --watch."
+        )
+        return 1
+
     if resolved_local_dir.exists() and not resolved_local_dir.is_dir():
         LOGGER.error("Local sync path is not a directory: %s", resolved_local_dir)
         return 1
 
-    if force and config_path.exists():
+    if force_type is ForceType.CLEAR and config_path.exists():
         config_path.unlink()
         LOGGER.info("Removed saved sync state for forced refresh: %s", config_path)
 
@@ -708,9 +753,18 @@ def run_sync(
         return 1
 
     if watch:
-        return run_forever(config, config_path, dry_run=dry_run)
+        return run_forever(
+            config,
+            config_path,
+            dry_run=dry_run,
+        )
 
-    result = run_sync_pass(config, config_path, dry_run=dry_run)
+    result = run_sync_pass(
+        config,
+        config_path,
+        dry_run=dry_run,
+        force_type=force_type,
+    )
     LOGGER.info(
         "Sync pass complete: downloaded=%s, uploaded=%s, conflicts=%s, removed=%s, skipped=%s",
         result["downloaded"],
