@@ -103,8 +103,9 @@ Continuously watch and resync (default polling happens every second):
 dbx-sync ./local-project /Workspace/Users/me/project --watch
 ```
 
-Use `--force` to clear saved sync state before a fresh pass. This can be useful to handle conflicts. 
-Pro-tip: Add --dry-run to check force behavior before running it for real.
+Use `--force` to clear saved sync state before a fresh pass. This can be useful to handle conflicts.
+
+Pro-tip: add `--dry-run` to check force behavior before running it for real.
 
 Force options are mutually exclusive and only apply to a single sync pass:
 
