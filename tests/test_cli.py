@@ -29,31 +29,23 @@ def test_main_uses_explicit_flags(monkeypatch: Any, tmp_path: Path) -> None:
 
     monkeypatch.setattr(cli, "run_sync", fake_run_sync)
 
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        exit_code = cli.main(
-            [
-                str(tmp_path),
-                "/Shared/example",
-                "--profile",
-                "WORKSPACE",
-                "--poll-interval",
-                "5",
-                "--log-level",
-                "DEBUG",
-                "--dry-run",
-                "--watch",
-                "--force",
-                "--force-upload",
-                "--force-download",
-            ]
-        )
+    exit_code = cli.main(
+        [
+            str(tmp_path),
+            "/Shared/example",
+            "--profile",
+            "WORKSPACE",
+            "--poll-interval",
+            "5",
+            "--log-level",
+            "DEBUG",
+            "--dry-run",
+            "--watch",
+            "--force-download",
+        ]
+    )
 
     assert exit_code == 0
-    # All three flags → warning, last one (--force-download → DOWNLOAD) wins
-    assert len(caught) == 1
-    assert issubclass(caught[0].category, UserWarning)
-    assert "--force-download" in str(caught[0].message)
     assert calls == {
         "local_dir": tmp_path.resolve(),
         "profile": "WORKSPACE",
@@ -113,20 +105,18 @@ def test_main_single_force_flag_no_warning(monkeypatch: Any, tmp_path: Path) -> 
         assert calls["force_type"] == expected_type
 
 
-def test_main_multiple_force_flags_warns(monkeypatch: Any, tmp_path: Path) -> None:
+def test_main_multiple_force_flags_are_rejected(monkeypatch: Any, tmp_path: Path) -> None:
     def fake_run_sync(**kwargs: Any) -> int:
         return 0
 
     monkeypatch.setattr(cli, "run_sync", fake_run_sync)
 
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
+    try:
         cli.main([str(tmp_path), "/Users/demo", "--force", "--force-upload"])
-
-    assert len(caught) == 1
-    assert issubclass(caught[0].category, UserWarning)
-    assert "--force" in str(caught[0].message)
-    assert "--force-upload" in str(caught[0].message)
+    except SystemExit as exc:
+        assert exc.code == 2
+    else:
+        raise AssertionError("expected argparse to reject multiple force flags")
 
 
 def test_main_requires_local_and_workspace_arguments(monkeypatch: Any) -> None:

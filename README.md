@@ -11,7 +11,7 @@
 
 Are you tired of bouncing between the Databricks workspace UI and your local editor, copying changes by hand, and pretending that counts as a workflow? Well now there's `dbx-sync`.
 
-`dbx-sync` keeps a single Databricks workspace folder and a single local directory in sync so you can work with your favorite tools and still stay aligned with what is running in Databricks.
+`dbx-sync` keeps a Databricks workspace folder or file and a local directory or file in sync so you can work with your favorite tools and still stay aligned with what is running in Databricks.
 
 Build locally, run in Databricks, tweak it there, then jump back to local coding. Skip the usual copy-paste ritual or one-way imports to weird folders.
 
@@ -21,9 +21,10 @@ Worried about losing files? `dbx-sync` does not delete files locally or remotely
 
 Current scope notes:
 
-- Sync is limited to a single local folder and a single Databricks workspace folder.
+- Sync is limited to a single local folder/workspace folder pair or one local/workspace file pair.
 - File and folder discovery is not recursive.
 - Local tracking currently covers notebook files with Databricks notebook extensions: `.py`, `.sql`, `.scala`, `.r`, and `.ipynb`.
+- When syncing a single local file, notebook extensions are imported as notebooks and other files are imported as workspace files.
 
 ## Prerequisites
 
@@ -72,6 +73,24 @@ Sync a single workspace folder with a single local folder (one-time):
 dbx-sync ./local-project /Workspace/Users/me/project
 ```
 
+Sync a single local file to a workspace folder, using the source filename for the target object:
+
+```bash
+dbx-sync ./local-project/notebook.py /Workspace/Users/me/project
+```
+
+Sync a single workspace file or notebook to a local folder, using the source filename locally:
+
+```bash
+dbx-sync ./local-project /Workspace/Users/me/project/notebook
+```
+
+Sync explicit local and workspace file paths:
+
+```bash
+dbx-sync ./local-project/notebook.py /Workspace/Users/me/project/notebook
+```
+
 Preview actions without applying them:
 
 ```bash
@@ -84,6 +103,19 @@ Continuously watch and resync (default polling happens every second):
 dbx-sync ./local-project /Workspace/Users/me/project --watch
 ```
 
+Use `--force` to clear saved sync state before a fresh pass. This can be useful to handle conflicts. 
+Pro-tip: Add --dry-run to check force behavior before running it for real.
+
+Force options are mutually exclusive and only apply to a single sync pass:
+
+- `--force` clears saved sync state before comparing local and remote files.
+- `--force-upload` uploads matching local files even when saved sync state would otherwise skip them.
+- `--force-download` downloads matching remote files even when saved sync state would otherwise skip them.
+
+```bash
+dbx-sync ./local-project /Workspace/Users/me/project --force
+```
+
 Override optional settings when needed:
 
 ```bash
@@ -91,10 +123,9 @@ dbx-sync ./local-project /Workspace/Users/me/project \
 	--profile WORKSPACE \
 	--poll-interval 5 \
 	--log-level DEBUG \
-	--force
 ```
 
-Use `--force` to clear saved sync state before a fresh pass.
+Watch mode cannot be combined with force options or dry-run mode. Use `--watch` for continuous syncing, or use `--dry-run`, `--force`, `--force-upload`, and `--force-download` for one-time sync passes.
 
 If your local directory does not exist, the tool will attempt to create it for you (when not in dry-run mode).
 
