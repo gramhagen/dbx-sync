@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import warnings
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -31,11 +30,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(
         prog="dbx-sync",
-        description="Synchronize Databricks workspace files to a local directory.",
+        description="Synchronize Databricks workspace files with a local path.",
     )
     parser.add_argument("-v", "--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("local_dir", help="Local directory to sync")
-    parser.add_argument("workspace", help="Databricks workspace folder to sync")
+    parser.add_argument("local_dir", help="Local file or directory to sync")
+    parser.add_argument("workspace", help="Databricks workspace file or folder to sync")
     parser.add_argument("--profile", default="DEFAULT", help="Databricks CLI profile name")
     parser.add_argument(
         "-p",
@@ -63,19 +62,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Watch for changes and sync continuously",
     )
-    parser.add_argument(
+    force_group = parser.add_mutually_exclusive_group()
+    force_group.add_argument(
         "-f",
         "--force",
         action="store_true",
         help="Force a refresh by clearing saved sync state before running",
     )
-    parser.add_argument(
+    force_group.add_argument(
         "-fu",
         "--force-upload",
         action="store_true",
         help="Force upload of all local files, ignoring sync state",
     )
-    parser.add_argument(
+    force_group.add_argument(
         "-fd",
         "--force-download",
         action="store_true",
@@ -83,23 +83,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    force_flags: list[tuple[str, ForceType]] = []
+    force_type = None
     if args.force:
-        force_flags.append(("--force", ForceType.CLEAR))
-    if args.force_upload:
-        force_flags.append(("--force-upload", ForceType.UPLOAD))
-    if args.force_download:
-        force_flags.append(("--force-download", ForceType.DOWNLOAD))
-
-    if len(force_flags) > 1:
-        flag_names = ", ".join(name for name, _ in force_flags)
-        warnings.warn(
-            f"Multiple force flags specified ({flag_names}); only the last one will be applied.",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    force_type = force_flags[-1][1] if force_flags else None
+        force_type = ForceType.CLEAR
+    elif args.force_upload:
+        force_type = ForceType.UPLOAD
+    elif args.force_download:
+        force_type = ForceType.DOWNLOAD
 
     try:
         return run_sync(

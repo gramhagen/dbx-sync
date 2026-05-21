@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -27,6 +28,18 @@ EXTENSION_LANGUAGES = {
 }
 
 LOGGER = logging.getLogger(__name__)
+
+
+def remote_parent_path(remote_path: str) -> str:
+    """Return the parent workspace path for a workspace object path."""
+    return remote_path.rstrip("/").rsplit("/", 1)[0] or "/"
+
+
+def remote_name_for_local_file(local_path: Path) -> str:
+    """Build a Databricks workspace object name from a local file path."""
+    if local_path.suffix.lower() in EXTENSION_LANGUAGES:
+        return local_path.stem
+    return local_path.name
 
 
 class ForceType(str, Enum):
@@ -138,12 +151,28 @@ def run_cli(args: list[str]) -> str:
         RuntimeError: If the CLI exits with a non-zero status.
     """
     LOGGER.debug("Running CLI command: %s", " ".join(args))
-    result = subprocess.run(
-        args,
-        capture_output=True,
-        text=True,
-        timeout=DEFAULT_SUBPROCESS_TIMEOUT_SECONDS,
-    )
+    timeout_text = os.environ.get("DBX_SYNC_SUBPROCESS_TIMEOUT_SECONDS")
+    try:
+        timeout_seconds = (
+            float(timeout_text) if timeout_text is not None else DEFAULT_SUBPROCESS_TIMEOUT_SECONDS
+        )
+    except ValueError as exc:
+        raise RuntimeError(
+            "DBX_SYNC_SUBPROCESS_TIMEOUT_SECONDS must be a number of seconds."
+        ) from exc
+    if timeout_seconds <= 0:
+        raise RuntimeError("DBX_SYNC_SUBPROCESS_TIMEOUT_SECONDS must be greater than zero.")
+    try:
+        result = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"Command timed out after {timeout_seconds:g}s: {' '.join(args)}"
+        ) from exc
     if result.returncode != 0:
         raise RuntimeError(
             f"Command failed ({result.returncode}): {' '.join(args)}\n{result.stderr.strip()}"
@@ -325,6 +354,15 @@ def tracked_local_files(local_dir: Path) -> list[Path]:
     ]
 
 
+def local_path_for_workspace_item(item: WorkspaceItem, remote_root: str, local_dir: Path) -> Path:
+    """Build the local path for a workspace item under a local sync root."""
+    relative_name = item.path[len(remote_root.rstrip("/")) :].lstrip("/")
+    if item.object_type == "NOTEBOOK" and item.language:
+        extension = LANGUAGE_EXTENSIONS.get(item.language, ".py")
+        return local_dir / f"{relative_name}{extension}"
+    return local_dir / relative_name
+
+
 def _default_file_state() -> dict[str, Any]:
     """Create an empty persisted state record for one synced path.
 
@@ -363,7 +401,7 @@ def _resolve_file_action(
         tuple[str, dict[str, Any], WorkspaceItem, Path]: Action name, mutable state entry,
         resolved workspace item, and resolved local path.
     """
-    # Rehydrate persisted state so deleted or temporarily missing remote entries still have context.
+    # Persisted state supplies local path and object metadata, but remote existence must be fresh.
     file_state = files_state.get(remote_path)
     if not isinstance(file_state, dict):
         file_state = _default_file_state()
@@ -373,13 +411,6 @@ def _resolve_file_action(
     last_synced_remote_ms = file_state.get("last_synced_remote_modified_ms")
     saved_language = file_state.get("language")
     file_state_language = saved_language if isinstance(saved_language, str) else None
-    if remote_item is None and isinstance(last_synced_remote_ms, int):
-        remote_item = WorkspaceItem(
-            path=remote_path,
-            object_type=str(file_state.get("object_type") or "FILE"),
-            language=file_state_language,
-            modified_at=last_synced_remote_ms,
-        )
     if remote_item is None:
         status = get_status(remote_path, profile)
         if status is not None:
@@ -407,12 +438,7 @@ def _resolve_file_action(
     if isinstance(configured_local_path, str) and configured_local_path:
         local_path = Path(configured_local_path)
     else:
-        relative_name = remote_path[len(remote_root.rstrip("/")) :].lstrip("/")
-        if remote_item.object_type == "NOTEBOOK" and remote_item.language:
-            extension = LANGUAGE_EXTENSIONS.get(remote_item.language, ".py")
-            local_path = local_dir / f"{relative_name}{extension}"
-        else:
-            local_path = local_dir / relative_name
+        local_path = local_path_for_workspace_item(remote_item, remote_root, local_dir)
 
     local_exists = local_path.exists()
     local_mtime_ms = int(local_path.stat().st_mtime * 1000) if local_exists else None
@@ -426,6 +452,8 @@ def _resolve_file_action(
     # If neither side still exists, drop the stale file-state entry on the next sync pass.
     if not local_exists and remote_mtime_ms is None:
         return "remove", file_state, remote_item, local_path
+    if local_exists and remote_mtime_ms is None:
+        return "upload", file_state, remote_item, local_path
 
     last_synced_local_ms = file_state.get("last_synced_local_modified_ms")
 
@@ -439,6 +467,19 @@ def _resolve_file_action(
         and isinstance(last_synced_remote_ms, int)
         and remote_mtime_ms > last_synced_remote_ms
     )
+
+    if (
+        remote_changed
+        and file_state.get("last_action") == "upload"
+        and local_mtime_ms == last_synced_local_ms
+    ):
+        remote_changed = False
+    if (
+        local_changed
+        and file_state.get("last_action") == "download"
+        and remote_mtime_ms == last_synced_remote_ms
+    ):
+        local_changed = False
 
     # On first sync, choose a source of truth from the available timestamps.
     if last_synced_remote_ms is None and last_synced_local_ms is None:
@@ -489,24 +530,45 @@ def run_sync_pass(
     local_dir = Path(str(config["local_dir"]))
     remote_root = str(config["remote_path"])
     profile = str(config["profile"])
+    configured_local_file = config.get("local_file_path")
+    local_file = Path(configured_local_file) if isinstance(configured_local_file, str) else None
+    configured_remote_file = config.get("remote_file_path")
+    remote_file = configured_remote_file if isinstance(configured_remote_file, str) else None
     files_state = config.setdefault("files", {})
     if not isinstance(files_state, dict):
         raise RuntimeError("Config 'files' entry must be a JSON object.")
 
-    local_files = tracked_local_files(local_dir)
+    local_files = (
+        [local_file]
+        if local_file is not None and local_file.exists()
+        else tracked_local_files(local_dir)
+    )
 
-    remote_candidates = {item.path: item for item in list_workspace(remote_root, profile)}
+    if remote_file is not None:
+        remote_status = get_status(remote_file, profile)
+        remote_candidates = {}
+        if remote_status is not None:
+            remote_language = remote_status.get("language")
+            remote_modified_at = remote_status.get("modified_at")
+            remote_candidates[remote_file] = WorkspaceItem(
+                path=remote_file,
+                object_type=str(remote_status.get("object_type") or "FILE"),
+                language=remote_language if isinstance(remote_language, str) else None,
+                modified_at=remote_modified_at if isinstance(remote_modified_at, int) else None,
+            )
+    else:
+        remote_candidates = {item.path: item for item in list_workspace(remote_root, profile)}
 
     for local_path in local_files:
-        remote_name = (
-            local_path.stem if local_path.suffix.lower() in EXTENSION_LANGUAGES else local_path.name
+        remote_path = (
+            remote_file or f"{remote_root.rstrip('/')}/{remote_name_for_local_file(local_path)}"
         )
-        remote_path = f"{remote_root.rstrip('/')}/{remote_name}"
         if remote_path not in files_state:
             state = _default_file_state()
             state["local_path"] = str(local_path)
-            state["object_type"] = "NOTEBOOK"
-            state["language"] = EXTENSION_LANGUAGES.get(local_path.suffix.lower())
+            local_language = EXTENSION_LANGUAGES.get(local_path.suffix.lower())
+            state["object_type"] = "NOTEBOOK" if local_language is not None else "FILE"
+            state["language"] = local_language
             files_state[remote_path] = state
 
     downloaded = 0
@@ -573,18 +635,22 @@ def run_sync_pass(
 
         if action == "download" and remote_mtime_ms is not None:
             download_workspace_item(remote_item, local_path, profile)
-            file_state["last_synced_remote_modified_ms"] = remote_mtime_ms
-            file_state["last_synced_local_modified_ms"] = int(local_path.stat().st_mtime * 1000)
+            downloaded_local_mtime_ms = int(local_path.stat().st_mtime * 1000)
+            sync_watermark_ms = max(remote_mtime_ms, downloaded_local_mtime_ms)
+            file_state["last_synced_remote_modified_ms"] = sync_watermark_ms
+            file_state["last_synced_local_modified_ms"] = sync_watermark_ms
             file_state["last_action"] = "download"
             downloaded += 1
         elif action == "upload" and local_mtime_ms is not None:
             upload_workspace_item(remote_item, local_path, profile)
             status = get_status(remote_path, profile)
-            status_modified_at = status.get("modified_at") if status is not None else None
-            file_state["last_synced_remote_modified_ms"] = (
-                status_modified_at if isinstance(status_modified_at, int) else None
+            status_modified_at = status.get("modified_at") if isinstance(status, dict) else None
+            uploaded_remote_mtime_ms = (
+                status_modified_at if isinstance(status_modified_at, int) else local_mtime_ms
             )
-            file_state["last_synced_local_modified_ms"] = local_mtime_ms
+            sync_watermark_ms = max(local_mtime_ms, uploaded_remote_mtime_ms)
+            file_state["last_synced_remote_modified_ms"] = sync_watermark_ms
+            file_state["last_synced_local_modified_ms"] = sync_watermark_ms
             file_state["last_action"] = "upload"
             uploaded += 1
         elif action == "conflict":
@@ -708,7 +774,6 @@ def run_sync(
     resolved_local_dir = local_dir.expanduser().resolve()
     resolved_log_level = log_level.upper()
     resolved_remote_path = remote_path.rstrip("/")
-    config_path = config_path_for(resolved_local_dir)
 
     configure_logging(resolved_log_level)
 
@@ -716,34 +781,72 @@ def run_sync(
         LOGGER.error("Poll interval must be at least 1 second.")
         return 1
 
-    if watch and force_type is not None:
-        LOGGER.error(
-            "Force options (--force, --force-upload, --force-download) can only be used for a "
-            "single sync pass and cannot be combined with --watch."
-        )
+    if watch:
+        if force_type is not None:
+            LOGGER.error(
+                "Force options (--force, --force-upload, --force-download) can only be used for a "
+                "single sync pass and cannot be combined with --watch."
+            )
+            return 1
+        if dry_run:
+            LOGGER.error("--dry-run cannot be used with --watch mode.")
+            return 1
+
+    local_file_path = resolved_local_dir if resolved_local_dir.is_file() else None
+    local_sync_dir = (
+        resolved_local_dir.parent if local_file_path is not None else resolved_local_dir
+    )
+
+    if resolved_local_dir.exists() and not (
+        resolved_local_dir.is_dir() or resolved_local_dir.is_file()
+    ):
+        LOGGER.error("Local sync path is not a file or directory: %s", resolved_local_dir)
         return 1
 
-    if resolved_local_dir.exists() and not resolved_local_dir.is_dir():
-        LOGGER.error("Local sync path is not a directory: %s", resolved_local_dir)
-        return 1
+    config_path = config_path_for(local_sync_dir)
 
     if force_type is ForceType.CLEAR and config_path.exists():
         config_path.unlink()
         LOGGER.info("Removed saved sync state for forced refresh: %s", config_path)
 
     existing_config = load_saved_config(config_path)
-    files_state = existing_config.get("files") if isinstance(existing_config, dict) else None
+    configured_files_state = (
+        existing_config.get("files") if isinstance(existing_config, dict) else None
+    )
+    files_state = configured_files_state if isinstance(configured_files_state, dict) else {}
+    remote_status = get_status(resolved_remote_path, profile)
+    remote_object_type = remote_status.get("object_type") if remote_status is not None else None
+    remote_file_path = None
+    remote_sync_root = resolved_remote_path
+
+    if remote_object_type == "DIRECTORY":
+        if local_file_path is not None:
+            remote_file_path = (
+                f"{resolved_remote_path.rstrip('/')}/{remote_name_for_local_file(local_file_path)}"
+            )
+    elif remote_object_type in {"NOTEBOOK", "FILE"} or local_file_path is not None:
+        remote_file_path = resolved_remote_path
+        remote_sync_root = remote_parent_path(resolved_remote_path)
+
+    if remote_file_path is not None and local_file_path is None and not local_sync_dir.exists():
+        local_sync_dir = resolved_local_dir
+        config_path = config_path_for(local_sync_dir)
+
     config = {
         "version": "v1",
         "profile": profile,
         "poll_interval_seconds": poll_interval_seconds,
         "log_level": resolved_log_level,
-        "remote_path": resolved_remote_path,
-        "local_dir": str(resolved_local_dir),
-        "files": files_state if isinstance(files_state, dict) else {},
+        "remote_path": remote_sync_root,
+        "local_dir": str(local_sync_dir),
+        "files": files_state,
     }
+    if local_file_path is not None:
+        config["local_file_path"] = str(local_file_path)
+    if remote_file_path is not None:
+        config["remote_file_path"] = remote_file_path
 
-    remote_parent = resolved_remote_path.rsplit("/", 1)[0] or "/"
+    remote_parent = remote_parent_path(remote_file_path or remote_sync_root)
     remote_parent_status = get_status(remote_parent, profile)
     if remote_parent_status is None:
         LOGGER.error("Remote parent workspace folder does not exist: %s", remote_parent)
@@ -773,4 +876,15 @@ def run_sync(
         result["removed"],
         result["skipped"],
     )
+    if result["conflicts"] > 0:
+        configured_files_state = config.get("files")
+        conflicted_paths = []
+        if isinstance(configured_files_state, dict):
+            conflicted_paths = [
+                path
+                for path, state in configured_files_state.items()
+                if isinstance(state, dict) and state.get("last_action") == "conflict"
+            ]
+        LOGGER.error("Conflict(s) detected. Conflicting file(s): %s", ", ".join(conflicted_paths))
+        return 1
     return 0

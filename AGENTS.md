@@ -6,9 +6,9 @@ This repository uses a single shared instruction file for coding agents.
 
 1. Sync dependencies with `uv sync --dev`.
 2. Implement code inside `src/dbx_sync/` using typed functions and small modules.
-3. Add or update tests in `tests/` for each user-visible change.
-4. Run `uv run ruff format .`, `uv run ruff check .`, `uv run ty check`, and `uv run pytest` before handing work back.
-5. Use `uv build` and `uv publish` for packaging and release operations.
+3. Update README.md to document new or changed functionality.
+4. Add or update tests in `tests/` for each user-visible change.
+5. Run `uv run ruff format .`, `uv run ruff check .`, `uv run ty check`, and `uv run pytest` before handing work back.
 
 ## Guardrails
 
@@ -39,4 +39,3 @@ This repository uses a single shared instruction file for coding agents.
 - Add unit tests for critical paths and behavior changes.
 - Include edge-case coverage for empty inputs, invalid state, and error handling when those paths matter.
 - Keep tests readable and focused on behavior rather than implementation detail.
-- When adapting logic from another codebase, translate the relevant tests into this repo's current API instead of copying obsolete cases unchanged.
