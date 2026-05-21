@@ -924,6 +924,44 @@ def test_run_sync_pass_single_remote_file_downloads_to_local_directory(
     mock_get_status.assert_called_once_with("/workspace/notebook", "DEFAULT")
 
 
+@patch("dbx_sync.sync.download_workspace_item")
+@patch("dbx_sync.sync.get_status")
+@patch("dbx_sync.sync.list_workspace")
+def test_run_sync_pass_single_remote_file_ignores_unrelated_local_files(
+    mock_list_workspace: MagicMock,
+    mock_get_status: MagicMock,
+    mock_download: MagicMock,
+    tmp_path: Path,
+) -> None:
+    unrelated_file = tmp_path / "unrelated.py"
+    unrelated_file.write_text("# unrelated", encoding="utf-8")
+    mock_get_status.return_value = {
+        "object_type": "NOTEBOOK",
+        "language": "PYTHON",
+        "modified_at": 5000,
+    }
+    mock_download.side_effect = lambda item, path, profile: path.write_text(
+        "# downloaded", encoding="utf-8"
+    )
+    config = {
+        "local_dir": str(tmp_path),
+        "remote_path": "/workspace",
+        "remote_file_path": "/workspace/notebook",
+        "profile": "DEFAULT",
+        "files": {},
+    }
+
+    result = sync.run_sync_pass(config, tmp_path / "config.json", dry_run=False)
+
+    assert result["downloaded"] == 1
+    assert set(config["files"]) == {"/workspace/notebook"}
+    assert config["files"]["/workspace/notebook"]["local_path"] == str(tmp_path / "notebook.py")
+    assert "/workspace/unrelated" not in config["files"]
+    mock_download.assert_called_once()
+    mock_list_workspace.assert_not_called()
+    mock_get_status.assert_called_once_with("/workspace/notebook", "DEFAULT")
+
+
 @patch("dbx_sync.sync.upload_workspace_item")
 @patch("dbx_sync.sync.get_status", return_value={"object_type": "NOTEBOOK", "modified_at": 9000})
 @patch("dbx_sync.sync.list_workspace", return_value=[])
@@ -1438,6 +1476,43 @@ def test_run_sync_remote_file_to_local_directory_uses_source_name(
     config = mock_run_sync_pass.call_args.args[0]
     assert config["local_dir"] == str(tmp_path)
     assert "local_file_path" not in config
+    assert config["remote_path"] == "/workspace"
+    assert config["remote_file_path"] == "/workspace/notebook"
+
+
+@patch(
+    "dbx_sync.sync.run_sync_pass",
+    return_value={"downloaded": 0, "uploaded": 0, "conflicts": 0, "removed": 0, "skipped": 0},
+)
+@patch("dbx_sync.sync.get_status")
+@patch("dbx_sync.sync.load_saved_config", return_value=None)
+def test_run_sync_remote_file_to_missing_local_file_uses_target_path(
+    mock_load_saved_config: MagicMock,
+    mock_get_status: MagicMock,
+    mock_run_sync_pass: MagicMock,
+    tmp_path: Path,
+) -> None:
+    local_file = tmp_path / "custom_name.py"
+    mock_get_status.side_effect = [
+        {"object_type": "NOTEBOOK", "language": "PYTHON", "modified_at": 5000},
+        {"object_type": "DIRECTORY"},
+    ]
+
+    result = sync.run_sync(
+        local_dir=local_file,
+        remote_path="/workspace/notebook",
+        profile="DEFAULT",
+        poll_interval_seconds=1,
+        log_level="INFO",
+        dry_run=False,
+        watch=False,
+    )
+
+    assert result == 0
+    mock_load_saved_config.assert_called_once_with(sync.config_path_for(tmp_path))
+    config = mock_run_sync_pass.call_args.args[0]
+    assert config["local_dir"] == str(tmp_path)
+    assert config["local_file_path"] == str(local_file)
     assert config["remote_path"] == "/workspace"
     assert config["remote_file_path"] == "/workspace/notebook"
 

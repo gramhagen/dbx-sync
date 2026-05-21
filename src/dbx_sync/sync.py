@@ -538,11 +538,12 @@ def run_sync_pass(
     if not isinstance(files_state, dict):
         raise RuntimeError("Config 'files' entry must be a JSON object.")
 
-    local_files = (
-        [local_file]
-        if local_file is not None and local_file.exists()
-        else tracked_local_files(local_dir)
-    )
+    if local_file is not None:
+        local_files = [local_file] if local_file.exists() else []
+    elif remote_file is not None:
+        local_files = []
+    else:
+        local_files = tracked_local_files(local_dir)
 
     if remote_file is not None:
         remote_status = get_status(remote_file, profile)
@@ -757,8 +758,8 @@ def run_sync(
     """Run a sync operation using fully resolved CLI parameters.
 
     Args:
-        local_dir: Local directory to synchronize.
-        remote_path: Databricks workspace folder to synchronize.
+        local_dir: Local file or directory to synchronize.
+        remote_path: Databricks workspace file or folder to synchronize.
         profile: Databricks CLI profile name.
         poll_interval_seconds: Watch-loop interval in seconds.
         log_level: Desired process log level.
@@ -792,16 +793,26 @@ def run_sync(
             LOGGER.error("--dry-run cannot be used with --watch mode.")
             return 1
 
-    local_file_path = resolved_local_dir if resolved_local_dir.is_file() else None
-    local_sync_dir = (
-        resolved_local_dir.parent if local_file_path is not None else resolved_local_dir
-    )
-
     if resolved_local_dir.exists() and not (
         resolved_local_dir.is_dir() or resolved_local_dir.is_file()
     ):
         LOGGER.error("Local sync path is not a file or directory: %s", resolved_local_dir)
         return 1
+
+    remote_status = get_status(resolved_remote_path, profile)
+    remote_object_type = remote_status.get("object_type") if remote_status is not None else None
+
+    local_file_path = None
+    if resolved_local_dir.is_file() or (
+        not resolved_local_dir.exists()
+        and resolved_local_dir.suffix
+        and remote_object_type in {"NOTEBOOK", "FILE"}
+    ):
+        local_file_path = resolved_local_dir
+
+    local_sync_dir = (
+        resolved_local_dir.parent if local_file_path is not None else resolved_local_dir
+    )
 
     config_path = config_path_for(local_sync_dir)
 
@@ -814,8 +825,6 @@ def run_sync(
         existing_config.get("files") if isinstance(existing_config, dict) else None
     )
     files_state = configured_files_state if isinstance(configured_files_state, dict) else {}
-    remote_status = get_status(resolved_remote_path, profile)
-    remote_object_type = remote_status.get("object_type") if remote_status is not None else None
     remote_file_path = None
     remote_sync_root = resolved_remote_path
 
