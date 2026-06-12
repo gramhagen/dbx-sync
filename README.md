@@ -67,6 +67,12 @@ uv run dbx-sync ./local-project /Workspace/Users/me/project
 
 ## Usage
 
+The command takes two positional arguments: the **first** is always the **local** path (file or directory) and the **second** is always the **remote** Databricks workspace path (file or folder):
+
+```bash
+dbx-sync <local-path> <remote-workspace-path>
+```
+
 Sync a single workspace folder with a single local folder (one-time):
 
 ```bash

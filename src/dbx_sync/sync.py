@@ -578,7 +578,12 @@ def run_sync_pass(
     removed = 0
     skipped = 0
 
-    candidate_paths = set(remote_candidates) | set(files_state)
+    if remote_file is not None:
+        # Single-file mode: only consider the target path, ignoring stale state
+        # entries left over from prior directory syncs sharing the same config.
+        candidate_paths = {remote_file}
+    else:
+        candidate_paths = set(remote_candidates) | set(files_state)
 
     for remote_path in sorted(candidate_paths):
         action, file_state, remote_item, local_path = _resolve_file_action(

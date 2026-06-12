@@ -885,6 +885,147 @@ def test_run_sync_pass_single_local_file_uploads_to_remote_directory(
     assert mock_get_status.call_count >= 1
 
 
+@patch("dbx_sync.sync.upload_workspace_item")
+@patch("dbx_sync.sync.get_status", return_value={"object_type": "FILE", "modified_at": 9000})
+@patch("dbx_sync.sync.list_workspace")
+def test_run_sync_pass_single_file_force_upload_ignores_stale_directory_state(
+    mock_list_workspace: MagicMock,
+    mock_get_status: MagicMock,
+    mock_upload: MagicMock,
+    tmp_path: Path,
+) -> None:
+    target_file = tmp_path / "data.csv"
+    target_file.write_text("a,b\n1,2", encoding="utf-8")
+    other_file = tmp_path / "other.py"
+    other_file.write_text("# other", encoding="utf-8")
+    other_mtime_ms = int(other_file.stat().st_mtime * 1000)
+    config_path = tmp_path / ".databricks" / "dbx-sync" / "config.json"
+    config = {
+        "local_dir": str(tmp_path),
+        "local_file_path": str(target_file),
+        "remote_path": "/workspace",
+        "remote_file_path": "/workspace/data.csv",
+        "profile": "DEFAULT",
+        # Stale state left over from a prior directory sync sharing this config.
+        "files": {
+            "/workspace/other": {
+                **sync._default_file_state(),
+                "local_path": str(other_file),
+                "object_type": "NOTEBOOK",
+                "language": "PYTHON",
+                "last_synced_remote_modified_ms": other_mtime_ms,
+                "last_synced_local_modified_ms": other_mtime_ms,
+            }
+        },
+    }
+
+    result = sync.run_sync_pass(
+        config, config_path, dry_run=False, force_type=sync.ForceType.UPLOAD
+    )
+
+    assert result["uploaded"] == 1
+    mock_upload.assert_called_once()
+    uploaded_item = mock_upload.call_args.args[0]
+    assert uploaded_item.path == "/workspace/data.csv"
+    mock_list_workspace.assert_not_called()
+
+
+@patch("dbx_sync.sync.download_workspace_item")
+@patch("dbx_sync.sync.get_status", return_value={"object_type": "FILE", "modified_at": 9000})
+@patch("dbx_sync.sync.list_workspace")
+def test_run_sync_pass_single_file_force_download_ignores_stale_directory_state(
+    mock_list_workspace: MagicMock,
+    mock_get_status: MagicMock,
+    mock_download: MagicMock,
+    tmp_path: Path,
+) -> None:
+    target_file = tmp_path / "data.csv"
+    target_file.write_text("a,b\n1,2", encoding="utf-8")
+    other_file = tmp_path / "other.py"
+    other_file.write_text("# other", encoding="utf-8")
+    other_mtime_ms = int(other_file.stat().st_mtime * 1000)
+    config_path = tmp_path / ".databricks" / "dbx-sync" / "config.json"
+    config = {
+        "local_dir": str(tmp_path),
+        "local_file_path": str(target_file),
+        "remote_path": "/workspace",
+        "remote_file_path": "/workspace/data.csv",
+        "profile": "DEFAULT",
+        # Stale state left over from a prior directory sync sharing this config.
+        "files": {
+            "/workspace/other": {
+                **sync._default_file_state(),
+                "local_path": str(other_file),
+                "object_type": "NOTEBOOK",
+                "language": "PYTHON",
+                "last_synced_remote_modified_ms": other_mtime_ms,
+                "last_synced_local_modified_ms": other_mtime_ms,
+            }
+        },
+    }
+
+    result = sync.run_sync_pass(
+        config, config_path, dry_run=False, force_type=sync.ForceType.DOWNLOAD
+    )
+
+    assert result["downloaded"] == 1
+    mock_download.assert_called_once()
+    downloaded_item = mock_download.call_args.args[0]
+    assert downloaded_item.path == "/workspace/data.csv"
+    mock_list_workspace.assert_not_called()
+
+
+@patch("dbx_sync.sync.download_workspace_item")
+@patch("dbx_sync.sync.get_status")
+@patch("dbx_sync.sync.list_workspace")
+def test_run_sync_pass_single_remote_file_force_ignores_stale_directory_state(
+    mock_list_workspace: MagicMock,
+    mock_get_status: MagicMock,
+    mock_download: MagicMock,
+    tmp_path: Path,
+) -> None:
+    mock_get_status.return_value = {
+        "object_type": "NOTEBOOK",
+        "language": "PYTHON",
+        "modified_at": 5000,
+    }
+    mock_download.side_effect = lambda item, path, profile: path.write_text(
+        "# downloaded", encoding="utf-8"
+    )
+    other_file = tmp_path / "other.py"
+    other_file.write_text("# other", encoding="utf-8")
+    other_mtime_ms = int(other_file.stat().st_mtime * 1000)
+    config_path = tmp_path / ".databricks" / "dbx-sync" / "config.json"
+    # Local path is a directory while the remote resolves to a single file.
+    config = {
+        "local_dir": str(tmp_path),
+        "remote_path": "/workspace",
+        "remote_file_path": "/workspace/notebook",
+        "profile": "DEFAULT",
+        # Stale state left over from a prior directory sync sharing this config.
+        "files": {
+            "/workspace/other": {
+                **sync._default_file_state(),
+                "local_path": str(other_file),
+                "object_type": "NOTEBOOK",
+                "language": "PYTHON",
+                "last_synced_remote_modified_ms": other_mtime_ms,
+                "last_synced_local_modified_ms": other_mtime_ms,
+            }
+        },
+    }
+
+    result = sync.run_sync_pass(
+        config, config_path, dry_run=False, force_type=sync.ForceType.DOWNLOAD
+    )
+
+    assert result["downloaded"] == 1
+    mock_download.assert_called_once()
+    downloaded_item = mock_download.call_args.args[0]
+    assert downloaded_item.path == "/workspace/notebook"
+    mock_list_workspace.assert_not_called()
+
+
 @patch("dbx_sync.sync.download_workspace_item")
 @patch("dbx_sync.sync.get_status")
 @patch("dbx_sync.sync.list_workspace")
