@@ -4,7 +4,7 @@ on:
   push:
     tags:
       # Publish on semantic version tags only, e.g. v1.2.3 or v1.2.3rc1
-      - v[0-9]+.[0-9]+.[0-9]+*
+      - v*.*.*
 
 # Deny all permissions at the workflow level; each job grants only what it needs.
 permissions: {}
